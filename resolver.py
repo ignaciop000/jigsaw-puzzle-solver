@@ -1,5 +1,5 @@
 ##USAGE
-##	python resolver.py --images pieces --method "top-to-bottom"
+##	python resolver.py --images pieces
 import argparse
 import imutils
 import os
@@ -12,40 +12,27 @@ import matplotlib.pyplot as plt
 import scipy
 import scipy.stats
 
-def draw_contour(image, c, i):
-	# compute the center of the contour area and draw a circle
-	# representing the center
-	M = cv2.moments(c)
+def draw_contour(image, contour, index):
+	cv2.drawContours(image, contour, -1, (0, 255, 0), 3)
+	M = cv2.moments(contour)
 	cX = int(M["m10"] / M["m00"])
 	cY = int(M["m01"] / M["m00"])
 
 	# draw the countour number on the image
-	cv2.putText(image, "#{}".format(i + 1), (cX - 20, cY), cv2.FONT_HERSHEY_SIMPLEX,
-		1.0, (255, 255, 255), 2)
+	cv2.putText(image, "#{}".format(index + 1), (cX - 20, cY), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
 
 	# return the image with the contour number drawn on it
 	return image
 
-def sort_contours(cnts, method="left-to-right"):
-	# initialize the reverse flag and sort index
-	reverse = False
-	i = 0
+def sort_contours(cnts, imageShape):
 
-	# handle if we need to sort in reverse
-	if method == "right-to-left" or method == "bottom-to-top":
-		reverse = True
-
-	# handle if we are sorting against the y-coordinate rather than
-	# the x-coordinate of the bounding box
-	if method == "top-to-bottom" or method == "bottom-to-top":
-		i = 1
-
-	# construct the list of bounding boxes and sort them from top to
-	# bottom
+	# construct the list of bounding boxes and sort them from top to bottom
 	boundingBoxes = [cv2.boundingRect(c) for c in cnts]
-	(cnts, boundingBoxes) = zip(*sorted(zip(cnts, boundingBoxes),
-		key=lambda b:b[1][i], reverse=reverse))
-
+	max_width = max(boundingBoxes, key=lambda r: r[0] + r[2])[0]
+	max_height = max(boundingBoxes, key=lambda r: r[3])[3]
+	nearest = max_height * 1.4
+	print max_width, max_height
+	(cnts, boundingBoxes) = zip(*sorted(zip(cnts, boundingBoxes), key=lambda b:(int(nearest * round(float(b[1][1])/nearest)) * max_width + b[1][0])))
 	# return the list of sorted contours and bounding boxes
 	return (cnts, boundingBoxes)
 
@@ -430,7 +417,6 @@ def distance_point_line_signed((a, b, c), (x0, y0)):
 
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--images", required=True, help="Path to the input images")
-ap.add_argument("-m", "--method", required=True, help="Sorting method")
 
 args = vars(ap.parse_args())
 
@@ -458,24 +444,29 @@ for filename in files:
 	#cv2.imshow("edged", imutils.resize( edged, height = 1000))
 
 	(_, cnts, _) = cv2.findContours(edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-	cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:5]
+	cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:40]
 	orig = image.copy()
 	# sort the contours according to the provided method
-	(cnts, boundingBoxes) = sort_contours(cnts, method=args["method"])
+	(cnts, boundingBoxes) = sort_contours(cnts, image.shape)
+	for x, y, w, h in boundingBoxes:
+		print "{:4} {:4} {:4} {:4}".format(x, y, w, h) 
 
 	for (i, c) in enumerate(cnts):
-		try:
-			_corner_indexes = [(0, 1), (1, 3), (3, 2), (0, 2)]
-			cv2.drawContours(orig, c, -1, (0, 255, 0), 3)
-			orig = draw_contour(orig, c, i)
-			peri = cv2.arcLength(c, True)
-			approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-			x,y,w,h = cv2.boundingRect(approx)
+		try:		
+			orig = draw_contour(orig, c, i)	
+			x,y,w,h = cv2.boundingRect(c)
 			cv2.rectangle(orig,(x,y),(x+w,y+h),(0,255,0),2)
-			blob = image[y:y+h+1 ,x:x+w+1]
+			blob = opening[y:y+h+3 ,x:x+w+3]
+			#_corner_indexes = [(0, 1), (1, 3), (3, 2), (0, 2)]
+			"""
+						
+			
+			
+			
 			gray_blob = cv2.cvtColor(blob, cv2.COLOR_BGR2GRAY)
 			thresh_blob =cv2.threshold(gray_blob, 128, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)[1]
 			opening_blob = cv2.morphologyEx(thresh_blob,cv2.MORPH_OPEN,kernel, iterations = 2)
+
 			img = np.float32(opening_blob)
 			harris = cv2.cornerHarris(img, 2, 3, 0.04)
 			harris = harris * gray_blob
@@ -515,24 +506,26 @@ for filename in files:
 			corners = corner_detection(edges, intersections, (xb, yb), 5, show=False)
 			corners = order_corners(corners)
 			line_params = compute_line_params(corners)
-			class_image = shape_classification(edges, line_params, 100, 5)					
-			cv2.imshow("blob", blob)
+			class_image = shape_classification(edges, line_params, 100, 5)
+			"""			
+			#cv2.imshow("blob", blob)
+			"""
 			cv2.imshow("gray_blob", gray_blob)
 			cv2.imshow("thresh_blob", thresh_blob)
 			cv2.imshow("thresh_blob", opening_blob)
 			cv2.imshow("harris", harris)
 			cv2.imshow("edges", edges)
 			cv2.imshow("class_image", class_image)
-			
+			"""
 		except Exception as e:
 			print e
-		finally:
-			cv2.waitKey(0)
+		#finally:
+			#cv2.waitKey(0)
 
 		
 
 	#cv2.imshow("Processed", imutils.resize( orig, height = 1000))
-	cv2.waitKey(0)
+	#cv2.waitKey(0)
 	cv2.destroyAllWindows()
 
 """
