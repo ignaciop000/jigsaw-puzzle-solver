@@ -76,6 +76,38 @@ def draw_points(image, points, color = [0,0,255]):
 		cv2.circle(image,(x,y),3,color,-1)
 	return image;
 
+def draw_line_withCoef(image, a, b, c):
+	"""
+	ax + by + c = 0
+	y = (-c - ax)/b
+	"""
+	if a == 0:
+		print "if"
+		#x = 0
+		#y = -c/b
+		x0 = 0
+		y0 = int(-c/b)
+		x1 = 1
+		y1 = int(-c/b)
+	elif b == 0:
+		print "elif"
+		#y = 0
+		#x = -c/a
+		x0 = int(-c/a)
+		y0 = 0
+		x1 = int(-c/a)
+		y1 = 1
+	else:
+		x0 = 0		
+		y0 = int( -c / b )
+		x1 = 1
+		y1 = int((-c-a)/b)
+	print x0, y0, x1, y1
+	lineThickness = 2
+	color = (0, 255,0)
+	cv2.line(image, (x0, y0), (x1, y1), color, lineThickness)
+	return image
+
 def draw_contour(image, contour, index):
 	cv2.drawContours(image, contour, -1, (0, 255, 0), 3)
 	M = cv2.moments(contour)
@@ -595,6 +627,8 @@ for filename in files:
 			edge_corners = draw_points(edges_color.copy(),corners)
 			#blob_corners = draw_points(edges.copy(),corners)
 			line_params = compute_line_params(corners)
+			for a,b,c in line_params
+				edge_corners = draw_line_withCoef(edge_corners, a,b,c)
 			class_image = shape_classification(edges, line_params, 100, 5)
 			print class_image
 	
@@ -622,45 +656,3 @@ for filename in files:
 	#cv2.imshow("Processed", imutils.resize( orig, height = 1000))
 	#cv2.waitKey(0)
 	cv2.destroyAllWindows()
-
-"""
-	for (i, c) in enumerate(cnts):
-		#thresh = draw_contour(thresh, c, i)
-		#cv2.drawContours(thresh, c, -1, (0, 255, 0), 3)
-		peri = cv2.arcLength(c, True)
-		approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-		x,y,w,h = cv2.boundingRect(approx)
-		#cv2.rectangle(orig,(x,y),(x+w,y+h),(0,255,0),2)
-		
-		pieza = thresh[y:y+h+1 ,x:x+w+1]
-		cv2.imshow("Pieza", pieza)
-		harris = cv2.cornerHarris(pieza, 5, 5, 0.04)
-		cv2.imshow("harris", harris)
-		#xy = get_corners(harris, 5, 0.2, 100)
-		#cv2.imshow("xy", xy)
-		#cut = thresh[y:y+h,x:x+w]
-
-		#extracted = extract_piece(cut)
-		#cv2.imshow("Pieza", extracted)
-		cv2.waitKey(0)
-		#ret, labels = cv2.connectedComponents(extracted)
-		#connected_areas = [np.count_nonzero(labels == l) for l in range(1, ret)]
-		#max_area_idx = np.argmax(connected_areas) + 1
-		#gray[labels != max_area_idx] = 0
-		#cut = 255 - cut
-		#cut = extract_piece(cut)
-		#cv2.imshow("Pieza", cut)
-		#cv2.waitKey(0)
-		#rect = cv2.minAreaRect(c)
-		#box = cv2.boxPoints(c)
-		#box = np.int0(box)
-		#cv2.drawContours(orig,[box],0,(0,0,255),2)
-
-	cv2.imshow("Processed", imutils.resize(thresh, height = 800))
-	cv2.waitKey(0)
-	cv2.destroyAllWindows()
-	#Normalizar hoja
-	#Divir piezas
-	
-	#Apply the four point transform to obtain a top-down
-"""
