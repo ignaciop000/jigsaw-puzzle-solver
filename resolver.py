@@ -331,6 +331,30 @@ def rotate(image, degrees):
 	
 	return cv2.warpAffine(image,M,(cols,rows)), M
 
+def rotate_bound(image, angle):
+    # grab the dimensions of the image and then determine the
+    # center
+    (h, w) = image.shape[:2]
+    (cX, cY) = (w // 2, h // 2)
+ 
+    # grab the rotation matrix (applying the negative of the
+    # angle to rotate clockwise), then grab the sine and cosine
+    # (i.e., the rotation components of the matrix)
+    M = cv2.getRotationMatrix2D((cX, cY), -angle, 1.0)
+    cos = np.abs(M[0, 0])
+    sin = np.abs(M[0, 1])
+ 
+    # compute the new bounding dimensions of the image
+    nW = int((h * sin) + (w * cos))
+    nH = int((h * cos) + (w * sin))
+ 
+    # adjust the rotation matrix to take into account translation
+    M[0, 2] += (nW / 2) - cX
+    M[1, 2] += (nH / 2) - cY
+ 
+    # perform the actual rotation and return the image
+    return cv2.warpAffine(image, M, (nW, nH)), M	
+
 def compute_barycentre(thresh, value=0):
 	"""
 	Given the segmented puzzle piece, compute its barycentre.
@@ -521,9 +545,10 @@ for filename in files:
 			cv2.rectangle(orig,(x,y),(x+w,y+h),(0,255,0),2)
 			blob = opening[y:y+h+3 ,x:x+w+3]
 			blob_color=cv2.merge((blob,blob,blob))
+			blob_gray = cv2.cvtColor(blob_color, cv2.COLOR_BGR2GRAY)
 			#shiTomasi,xy = shi_tomasi(blob_color.copy())
 			harris, xy  = harris_corners(blob_color.copy())							
-			#_corner_indexes = [(0, 1), (1, 3), (3, 2), (0, 2)]
+			_corner_indexes = [(0, 1), (1, 3), (3, 2), (0, 2)]
 			"""
 			img = np.float32(opening_blob)
 			harris = cv2.cornerHarris(img, 2, 3, 0.04)
@@ -547,7 +572,7 @@ for filename in files:
 			else:
 				rotation_angle = np.arctan2(intersections[1, 1] - intersections[0, 1], intersections[1, 0] - intersections[0, 0]) * 180 / np.pi
 			
-			edges = blob_color - cv2.erode(blob_color, np.ones((3, 3)))
+			edges = blob_gray - cv2.erode(blob_gray, np.ones((3, 3)))
 			#plt.figure(figsize=(6, 6))
 			#plt.title("{0} - {1}".format(filename, label))
 			#plt.imshow(gray_blob, cmap='gray')
@@ -557,30 +582,35 @@ for filename in files:
 			#plt.colorbar()
 			#plt.show()
 			# Rotate all images
-			edges, M = rotate(edges, rotation_angle)				
-
+			edges, M = rotate_bound(edges, rotation_angle)			
+			edges_color=cv2.merge((edges,edges,edges))
 			# Rotate intersection points
 			intersections = np.array(np.round([M.dot((point[0], point[1], 1)) for point in intersections])).astype(np.int)
 			rotate_intersections = draw_points(edges.copy(),intersections)
 		
-			#yb, xb = compute_barycentre(edges)
+			yb, xb = compute_barycentre(edges)
 		
-			#corners = corner_detection(edges, intersections, (xb, yb), 5, show=False)
-			#corners = order_corners(corners)
-			#line_params = compute_line_params(corners)
-			#class_image = shape_classification(edges, line_params, 100, 5)
+			corners = corner_detection(edges, intersections, (xb, yb), 5, show=False)
+			corners = order_corners(corners)
+			edge_corners = draw_points(edges_color.copy(),corners)
+			#blob_corners = draw_points(edges.copy(),corners)
+			line_params = compute_line_params(corners)
+			class_image = shape_classification(edges, line_params, 100, 5)
+			print class_image
 	
 			cv2.imshow("blob", blob)
 			#cv2.imshow("gray_blob", gray_blob)
 			#cv2.imshow("thresh_blob", thresh_blob)
 			#cv2.imshow("thresh_blob", opening_blob)
-			cv2.imshow("harris", harris)
+			#cv2.imshow("harris", harris)
 			#cv2.imshow("shi_tomasi", shiTomasi)
-			cv2.imshow("harris_processed", harris_processed)
-			cv2.imshow("harris_intersections", harris_intersections)			
-			cv2.imshow("edges", edges)
-			cv2.imshow("rotate_intersections", rotate_intersections)
-			#cv2.imshow("class_image", class_image)
+			#cv2.imshow("harris_processed", harris_processed)
+			#cv2.imshow("harris_intersections", harris_intersections)			
+			#cv2.imshow("edges", edges)
+			#cv2.imshow("rotate_intersections", rotate_intersections)
+			cv2.imshow("edge_corners", edge_corners)
+			
+			cv2.imshow("class_image", class_image)
 			cv2.waitKey(0)
 		except Exception as e:
 			print e
