@@ -1,1 +1,2 @@
-python resolver.py --images pieces --method "top-to-bottom"
+python resolver.py --images pieces
+pause

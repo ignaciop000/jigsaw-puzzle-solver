@@ -12,6 +12,70 @@ import matplotlib.pyplot as plt
 import scipy
 import scipy.stats
 
+'''
+Function : cv2.cornerHarris(image,blocksize,ksize,k)
+Parameters are as follows :
+1. image : the source image in which we wish to find the corners (grayscale)
+2. blocksize : size of the neighborhood in which we compare the gradient 
+3. ksize : aperture parameter for the Sobel() Operator (used for finding Ix and Iy)
+4. k : Harris detector free parameter (used in the calculation of R)
+'''
+
+def harris_corners(image):
+	
+	#Converting the image to grayscale
+	gray_img = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
+	
+	#Conversion to float is a prerequisite for the algorithm
+	gray_img = np.float32(gray_img)
+	
+	# 3 is the size of the neighborhood considered, aperture parameter = 3
+	# k = 0.04 used to calculate the window score (R)
+	corners_img = cv2.cornerHarris(gray_img,3,3,0.04)
+	
+	#Marking the corners in Green
+	image[corners_img>0.001*corners_img.max()] = [0,255,0]
+	xy = get_corners(corners_img,5, 0.2,100)
+	return (image, xy)
+
+'''
+Function: cv2.goodFeaturesToTrack(image,maxCorners, qualityLevel, minDistance[, corners[, mask[, blockSize[, useHarrisDetector[, k]]]]])
+image  Input 8-bit or floating-point 32-bit, single-channel image.
+maxCorners  You can specify the maximum no. of corners to be detected. (Strongest ones are returned if detected more than max.)
+qualityLevel  Minimum accepted quality of image corners.
+minDistance  Minimum possible Euclidean distance between the returned corners.
+corners  Output vector of detected corners.
+mask  Optional region of interest. 
+blockSize  Size of an average block for computing a derivative covariation matrix over each pixel neighborhood. 
+useHarrisDetector  Set this to True if you want to use Harris Detector with this function.
+k  Free parameter of the Harris detector.
+'''
+
+def shi_tomasi(image):
+
+	#Converting to grayscale
+	gray_img = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
+	
+	#Specifying maximum number of corners as 1000
+	# 0.01 is the minimum quality level below which the corners are rejected
+	# 10 is the minimum euclidean distance between two corners
+	corners_img = cv2.goodFeaturesToTrack(gray_img,1000,0.01,10)
+	
+	corners_img = np.int0(corners_img)
+	xy = []
+	for corners in corners_img:      
+		x,y = corners.ravel()
+		xy.append((x,y))
+		#Circling the corners in green
+		#cv2.circle(image,(x,y),3,[0,0,255],-1)
+	draw_points(image, xy)
+	return (image,xy)
+
+def draw_points(image, points, color = [0,0,255]):
+	for x,y in points:
+		cv2.circle(image,(x,y),3,color,-1)
+	return image;
+
 def draw_contour(image, contour, index):
 	cv2.drawContours(image, contour, -1, (0, 255, 0), 3)
 	M = cv2.moments(contour)
@@ -31,7 +95,6 @@ def sort_contours(cnts, imageShape):
 	max_width = max(boundingBoxes, key=lambda r: r[0] + r[2])[0]
 	max_height = max(boundingBoxes, key=lambda r: r[3])[3]
 	nearest = max_height * 1.4
-	print max_width, max_height
 	(cnts, boundingBoxes) = zip(*sorted(zip(cnts, boundingBoxes), key=lambda b:(int(nearest * round(float(b[1][1])/nearest)) * max_width + b[1][0])))
 	# return the list of sorted contours and bounding boxes
 	return (cnts, boundingBoxes)
@@ -448,8 +511,8 @@ for filename in files:
 	orig = image.copy()
 	# sort the contours according to the provided method
 	(cnts, boundingBoxes) = sort_contours(cnts, image.shape)
-	for x, y, w, h in boundingBoxes:
-		print "{:4} {:4} {:4} {:4}".format(x, y, w, h) 
+	#for x, y, w, h in boundingBoxes:
+	#	print "{:4} {:4} {:4} {:4}".format(x, y, w, h) 
 
 	for (i, c) in enumerate(cnts):
 		try:		
@@ -457,70 +520,72 @@ for filename in files:
 			x,y,w,h = cv2.boundingRect(c)
 			cv2.rectangle(orig,(x,y),(x+w,y+h),(0,255,0),2)
 			blob = opening[y:y+h+3 ,x:x+w+3]
+			blob_color=cv2.merge((blob,blob,blob))
+			#shiTomasi,xy = shi_tomasi(blob_color.copy())
+			harris, xy  = harris_corners(blob_color.copy())							
 			#_corner_indexes = [(0, 1), (1, 3), (3, 2), (0, 2)]
 			"""
-						
-			
-			
-			
-			gray_blob = cv2.cvtColor(blob, cv2.COLOR_BGR2GRAY)
-			thresh_blob =cv2.threshold(gray_blob, 128, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)[1]
-			opening_blob = cv2.morphologyEx(thresh_blob,cv2.MORPH_OPEN,kernel, iterations = 2)
-
 			img = np.float32(opening_blob)
 			harris = cv2.cornerHarris(img, 2, 3, 0.04)
-			harris = harris * gray_blob
-			xy = get_corners(harris,5, 0.2,100)
+			harris = harris * gray_blob			
 			xy = np.round(xy).astype(np.int)
+			"""
+			xy = np.round(xy).astype(np.int)
+			harris_processed = draw_points(blob_color.copy(),xy)
+			
 			if len(xy) < 4:
 				raise RuntimeError('Not enough corners')
-			
+
 			intersections = get_best_fitting_rect_coords(xy, perp_angle_thresh=30)
-			print "intersections", intersections
+			harris_intersections = draw_points(blob_color.copy(),intersections)
+			#print "intersections", intersections
+
 			if intersections is None:
 				raise RuntimeError('No rectangle found')	
 			if intersections[1, 0] == intersections[0, 0]:
 				rotation_angle = 90
 			else:
 				rotation_angle = np.arctan2(intersections[1, 1] - intersections[0, 1], intersections[1, 0] - intersections[0, 0]) * 180 / np.pi
-			print "rotation_angle", rotation_angle
-			edges = opening_blob - cv2.erode(opening_blob, np.ones((3, 3)))
-			plt.figure(figsize=(6, 6))
+			
+			edges = blob_color - cv2.erode(blob_color, np.ones((3, 3)))
+			#plt.figure(figsize=(6, 6))
 			#plt.title("{0} - {1}".format(filename, label))
-			plt.imshow(gray_blob, cmap='gray')
+			#plt.imshow(gray_blob, cmap='gray')
 			#print xy
-			plt.scatter(xy[:, 0], xy[:, 1], color='red')
-			plt.scatter(intersections[:, 0], intersections[:, 1], color='blue')
+			#plt.scatter(xy[:, 0], xy[:, 1], color='red')
+			#plt.scatter(intersections[:, 0], intersections[:, 1], color='blue')
 			#plt.colorbar()
-			plt.show()
+			#plt.show()
 			# Rotate all images
-			edges, M = rotate(edges, rotation_angle)	
-			cv2.imshow("edges", edges)
+			edges, M = rotate(edges, rotation_angle)				
 
 			# Rotate intersection points
 			intersections = np.array(np.round([M.dot((point[0], point[1], 1)) for point in intersections])).astype(np.int)
-			#print "intersections", intersections
+			rotate_intersections = draw_points(edges.copy(),intersections)
 		
-			yb, xb = compute_barycentre(opening_blob)
+			#yb, xb = compute_barycentre(edges)
 		
-			corners = corner_detection(edges, intersections, (xb, yb), 5, show=False)
-			corners = order_corners(corners)
-			line_params = compute_line_params(corners)
-			class_image = shape_classification(edges, line_params, 100, 5)
-			"""			
-			#cv2.imshow("blob", blob)
-			"""
-			cv2.imshow("gray_blob", gray_blob)
-			cv2.imshow("thresh_blob", thresh_blob)
-			cv2.imshow("thresh_blob", opening_blob)
+			#corners = corner_detection(edges, intersections, (xb, yb), 5, show=False)
+			#corners = order_corners(corners)
+			#line_params = compute_line_params(corners)
+			#class_image = shape_classification(edges, line_params, 100, 5)
+	
+			cv2.imshow("blob", blob)
+			#cv2.imshow("gray_blob", gray_blob)
+			#cv2.imshow("thresh_blob", thresh_blob)
+			#cv2.imshow("thresh_blob", opening_blob)
 			cv2.imshow("harris", harris)
+			#cv2.imshow("shi_tomasi", shiTomasi)
+			cv2.imshow("harris_processed", harris_processed)
+			cv2.imshow("harris_intersections", harris_intersections)			
 			cv2.imshow("edges", edges)
-			cv2.imshow("class_image", class_image)
-			"""
+			cv2.imshow("rotate_intersections", rotate_intersections)
+			#cv2.imshow("class_image", class_image)
+			cv2.waitKey(0)
 		except Exception as e:
 			print e
 		#finally:
-			#cv2.waitKey(0)
+		#	cv2.waitKey(0)
 
 		
 
