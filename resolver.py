@@ -81,8 +81,9 @@ def draw_line_withCoef(image, a, b, c):
 	ax + by + c = 0
 	y = (-c - ax)/b
 	"""
+	maxX = image.shape[1]
+	maxY = image.shape[0]
 	if a == 0:
-		print "if"
 		#x = 0
 		#y = -c/b
 		x0 = 0
@@ -90,7 +91,6 @@ def draw_line_withCoef(image, a, b, c):
 		x1 = 1
 		y1 = int(-c/b)
 	elif b == 0:
-		print "elif"
 		#y = 0
 		#x = -c/a
 		x0 = int(-c/a)
@@ -100,9 +100,8 @@ def draw_line_withCoef(image, a, b, c):
 	else:
 		x0 = 0		
 		y0 = int( -c / b )
-		x1 = 1
-		y1 = int((-c-a)/b)
-	print x0, y0, x1, y1
+		x1 = maxX
+		y1 = int( (-c - (a * maxX) ) / b )
 	lineThickness = 2
 	color = (0, 255,0)
 	cv2.line(image, (x0, y0), (x1, y1), color, lineThickness)
@@ -364,28 +363,28 @@ def rotate(image, degrees):
 	return cv2.warpAffine(image,M,(cols,rows)), M
 
 def rotate_bound(image, angle):
-    # grab the dimensions of the image and then determine the
-    # center
-    (h, w) = image.shape[:2]
-    (cX, cY) = (w // 2, h // 2)
+	# grab the dimensions of the image and then determine the
+	# center
+	(h, w) = image.shape[:2]
+	(cX, cY) = (w // 2, h // 2)
  
-    # grab the rotation matrix (applying the negative of the
-    # angle to rotate clockwise), then grab the sine and cosine
-    # (i.e., the rotation components of the matrix)
-    M = cv2.getRotationMatrix2D((cX, cY), -angle, 1.0)
-    cos = np.abs(M[0, 0])
-    sin = np.abs(M[0, 1])
+	# grab the rotation matrix (applying the negative of the
+	# angle to rotate clockwise), then grab the sine and cosine
+	# (i.e., the rotation components of the matrix)
+	M = cv2.getRotationMatrix2D((cX, cY), -angle, 1.0)
+	cos = np.abs(M[0, 0])
+	sin = np.abs(M[0, 1])
  
-    # compute the new bounding dimensions of the image
-    nW = int((h * sin) + (w * cos))
-    nH = int((h * cos) + (w * sin))
+	# compute the new bounding dimensions of the image
+	nW = int((h * sin) + (w * cos))
+	nH = int((h * cos) + (w * sin))
  
-    # adjust the rotation matrix to take into account translation
-    M[0, 2] += (nW / 2) - cX
-    M[1, 2] += (nH / 2) - cY
+	# adjust the rotation matrix to take into account translation
+	M[0, 2] += (nW / 2) - cX
+	M[1, 2] += (nH / 2) - cY
  
-    # perform the actual rotation and return the image
-    return cv2.warpAffine(image, M, (nW, nH)), M	
+	# perform the actual rotation and return the image
+	return cv2.warpAffine(image, M, (nW, nH)), M	
 
 def compute_barycentre(thresh, value=0):
 	"""
@@ -467,7 +466,7 @@ def shape_classification(edges, line_params, d_threshold=500, n_hs=10):
 	for x_edge, y_edge in zip(x_nonzero, y_nonzero):
 		d = [distance_point_line_squared(line_param, (x_edge, y_edge)) for line_param in line_params]
 		if np.min(d) < d_threshold:
-			class_image[y_edge, x_edge] = np.argmin(d) + 1
+			class_image[y_edge, x_edge] = np.argmin(d) + 1	
 		else:
 			non_classified_points.append((x_edge, y_edge))
 
@@ -482,7 +481,6 @@ def shape_classification(edges, line_params, d_threshold=500, n_hs=10):
 	# The process is repeated and at each iteration the newly classified points are removed from the ones
 	# that still need to be classified. The process is interrupted when no new point has been classified
 	# or when a maximum number of iterations has been reached (in case of a noisy points that has no neighbours).
-	
 	
 	map_iteration = 0
 	max_map_iterations = 50
@@ -505,7 +503,7 @@ def shape_classification(edges, line_params, d_threshold=500, n_hs=10):
 			non_classified_points = np.delete(non_classified_points, classified_points_at_current_iteration, axis=0)
 		else:
 			break
-			
+
 	return class_image
 
 
@@ -532,6 +530,93 @@ def distance_point_line_signed((a, b, c), (x0, y0)):
 	Computes the signed distance of a 2D point (x0, y0) from a line ax + by + c = 0
 	"""
 	return (a*x0 + b*y0 + c) / np.sqrt(a**2 + b**2)
+
+def compute_inout(class_image, line_params, (xb, yb), d_threshold=10):
+	
+	# Given the full class image, the line parameters and the coordinates of the barycenter,
+	# compute for each side if the curve of the piece goes inside (in) or outside (out).
+	# This is done by computing the mean coordinates for each class and see if the signed distance
+	# from the corners' line has the same sign of the signed distance of the barycenter. If that
+	# true, the two points lie on the same side and we have a in; otherwise we have a out.
+	# To let the points of the curve to contribute more to the mean point calculation, only the
+	# signed distances that are greater than a threshold are used.
+	
+	inout = []
+
+	for line_param, cl in zip(line_params, (1, 2, 3, 4)):
+
+		coords = np.array([zip(*np.where(class_image == cl))])[0]
+
+		distances = np.array([distance_point_line_signed(line_param, (x0, y0)) for y0, x0 in coords])    
+		distances = distances[np.abs(distances) > d_threshold]
+		m_dist = np.mean(distances)
+
+		b_dist = distance_point_line_signed(line_param, (xb, yb))
+
+		if b_dist * m_dist > 0:
+			inout.append('in')
+		else:
+			inout.append('out')
+			
+	return inout
+
+def create_side_images(class_image, inout, corners):
+	
+	how_to_rotate = [(90, -90), (180, 0), (-90, 90), (0, 180)]
+	side_images = []
+	#cv2.imshow("class_image",class_image)
+	for cl in (1, 2, 3, 4):
+		side_image = np.zeros(class_image.shape, dtype='uint8')
+
+		side_image[class_image == cl] = 255
+		#cv2.imshow(str(cl), side_image)
+		#cv2.waitKey(0)
+		io = inout[cl - 1]
+		htw = how_to_rotate[cl - 1]
+		side_corners_idx = _corner_indexes[cl - 1]
+		#print io, htw, side_corners_idx
+
+		htw = htw[0] if io == 'in' else htw[1]
+		side_image_rot, M = rotate_bound(side_image, htw)
+		side_corners = np.array(np.round([M.dot((corners[corner_idx][0], corners[corner_idx][1], 1)) for corner_idx in side_corners_idx])).astype(np.int)
+
+		# Order the corners from higher (smaller y coordinate)
+		if side_corners[0, 1] > side_corners[1, 1]:
+			side_corners = side_corners[::-1]
+
+			
+		# Correct the angle on each side separately
+		if side_corners[0, 0] != side_corners[1, 0]:
+			m = float(side_corners[1, 1] - side_corners[0, 1]) / (side_corners[1, 0] - side_corners[0, 0])
+			corners_angle = np.arctan(m) * 180 / np.pi
+			correction_angle = - (corners_angle / abs(corners_angle) * 90 - corners_angle)
+
+			side_image_rot, M = rotate_bound(side_image_rot, correction_angle)
+
+		side_image_rot[side_image_rot <= 0.5] = 0
+		side_image_rot[side_image_rot > 0.5] = 1
+		
+		
+		nz = np.nonzero(side_image_rot)
+		min_y, max_y, min_x, max_x = np.min(nz[0]), np.max(nz[0]), np.min(nz[1]), np.max(nz[1])
+		side_image_rot = side_image_rot[min_y:max_y+1, min_x:max_x+1]
+		side_images.append(side_image_rot)
+
+	return side_images
+
+def plot_side_images(side_images, inout, set_number, piece_number):
+    
+    for cl, (side_image, io) in enumerate(zip(side_images, inout), start=1):
+    	filename = "{0}-{1}-{2}".format(set_number,piece_number,cl)
+    	print filename
+    	np.save(os.path.join("curves", filename), side_image)
+    	#print side_image
+        #plt.subplot(220 + cl)
+        #plt.title("{0} {1}".format(cl, io))
+        #plt.imshow(cv2.dilate(side_image, (3,3)))
+
+	#plt.show()        
+
 
 
 ap = argparse.ArgumentParser()
@@ -575,7 +660,14 @@ for filename in files:
 			orig = draw_contour(orig, c, i)	
 			x,y,w,h = cv2.boundingRect(c)
 			cv2.rectangle(orig,(x,y),(x+w,y+h),(0,255,0),2)
-			blob = opening[y:y+h+3 ,x:x+w+3]
+			blob = opening[y:y+h+2 ,x:x+w+2]
+			big_blob = np.full((400,400),255, np.uint8)
+			y_offset = 50
+			x_offset = 50
+			#rint blob
+			#v2.waitKey(0)
+			big_blob[y_offset:y_offset+blob.shape[0], x_offset:x_offset+blob.shape[1]] = blob
+			blob = big_blob
 			blob_color=cv2.merge((blob,blob,blob))
 			blob_gray = cv2.cvtColor(blob_color, cv2.COLOR_BGR2GRAY)
 			#shiTomasi,xy = shi_tomasi(blob_color.copy())
@@ -627,13 +719,26 @@ for filename in files:
 			edge_corners = draw_points(edges_color.copy(),corners)
 			#blob_corners = draw_points(edges.copy(),corners)
 			line_params = compute_line_params(corners)
-			for a,b,c in line_params
+			for a,b,c in line_params:
 				edge_corners = draw_line_withCoef(edge_corners, a,b,c)
-			class_image = shape_classification(edges, line_params, 100, 5)
-			print class_image
-	
-			cv2.imshow("blob", blob)
-			#cv2.imshow("gray_blob", gray_blob)
+			class_image = shape_classification(edges, line_params, 100, 5)	
+
+			inout = compute_inout(class_image, line_params, (xb, yb), 5)		
+			side_images = create_side_images(class_image, inout, corners)
+			#plot_side_images(side_images, inout)
+			"""
+			for i, (side_image, io) in enumerate(zip(result['side_images'], result['inout']), start=1):
+				out_io = 'int' if io == 'in' else 'out'
+				
+				
+				out_filename = "{0}_{1}_{2}.jpg".format(label, i, out_io)
+				out_path = join('sides', out_filename)
+		
+				cv2.imwrite(out_path, side_image)
+			"""
+
+			#cv2.imshow("blob", blob)
+			#cv2.imshow("blob_gray", blob_gray)
 			#cv2.imshow("thresh_blob", thresh_blob)
 			#cv2.imshow("thresh_blob", opening_blob)
 			#cv2.imshow("harris", harris)
@@ -642,10 +747,13 @@ for filename in files:
 			#cv2.imshow("harris_intersections", harris_intersections)			
 			#cv2.imshow("edges", edges)
 			#cv2.imshow("rotate_intersections", rotate_intersections)
-			cv2.imshow("edge_corners", edge_corners)
-			
-			cv2.imshow("class_image", class_image)
-			cv2.waitKey(0)
+			#cv2.imshow("edge_corners", edge_corners)
+			#cv2.imwrite("ex", side_image)
+			#cv2.imshow("side_images", side_images)
+			#plt.imshow(blob)
+			plot_side_images(side_images,inout, os.path.splitext(filename)[0], i)
+			#plt.show()
+			#cv2.waitKey(0)
 		except Exception as e:
 			print e
 		#finally:

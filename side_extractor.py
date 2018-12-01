@@ -318,7 +318,7 @@ def create_side_images(class_image, inout, corners):
     side_images = []
 
     for cl in (1, 2, 3, 4):
-
+        print class_image.shape
         side_image = np.zeros(class_image.shape, dtype='uint8')
         side_image[class_image == cl] = cl
 
